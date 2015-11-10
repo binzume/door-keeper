@@ -7,7 +7,7 @@
 #include <WiFiUdp.h>
 #include <Ticker.h>
 
-const char* ssid = "public";
+const char* ssid = "binzume.kstm.org";
 const char* password = "**********";
 MDNSResponder mdns;
 ESP8266WebServer server(80);
@@ -27,6 +27,7 @@ bool locked = true;
 
 const char* apiHost = "api.example.com";
 const int apiPort = 9000;
+const String apiToken = "*****";
 
 void handleRoot() {
   digitalWrite(led, 1);
@@ -80,6 +81,7 @@ void setup(void){
   server.on("/", handleRoot);
   
   server.on("/door/status", [](){
+    ping();
     server.send(200, "text/json", String("{\"status\":\"ok\", \"locked\": ") + (locked?"true":"false") +"}");
   });
 
@@ -101,12 +103,13 @@ void setup(void){
   Serial.println("HTTP server started");
   udpServer.begin(9000);
   Serial.println("UDP server started");
+  ping();
   pingTicker.attach(300, ping);
 }
 
 void ping() {
   udpServer.beginPacket(apiHost, apiPort);
-  udpServer.write("{\"device\":\"door01\"}");
+  udpServer.write((String("{\"type\":\"door\",\"device\":\"door01\",\"token\":\""+apiToken+"\",\"locked\": ") + (locked?"true":"false") +"}").c_str());
   udpServer.endPacket();
 }
 
@@ -124,10 +127,10 @@ void servo_off() {
 void on_recv_event(String msg) {
   Serial.println(msg);
   // TODO auth
-  if (msg == "{\"msg\":\"lock\"}") {
+  if (msg == "token:"+apiToken+"\tcommand:lock") {
     locked = true;
     servo_apply();
-  } else if (msg == "{\"msg\":\"unlock\"}") {
+  } else if (msg == "token:"+apiToken+"\tcommand:unlock") {
     locked = false;
     servo_apply();
   } else {
