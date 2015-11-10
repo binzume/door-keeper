@@ -3,12 +3,16 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <EEPROM.h>
+#include <WiFiUdp.h>
 #include <Ticker.h>
 
 const char* ssid = "public";
 const char* password = "********";
 MDNSResponder mdns;
 ESP8266WebServer server(80);
+WiFiUDP udpServer;
+Ticker pingTicker;
+
 
 const uint8_t ledPin = 4;
 
@@ -18,6 +22,12 @@ const uint8_t openBtnPin = 12;
 
 // from aiphone
 const uint8_t startLedPin = 14;
+
+const char* apiHost = "api.example.com";
+const int apiPort = 9000;
+const String apiToken = "*****";
+const char* device = "aiphone";
+
 
 void handleRoot() {
   digitalWrite(ledPin, 1);
@@ -92,9 +102,43 @@ void setup(void){
   
   server.begin();
   Serial.println("HTTP server started");
+  udpServer.begin(9000);
+  Serial.println("UDP server started");
+  ping();
+  pingTicker.attach(300, ping);
+}
+
+void ping() {
+  udpServer.beginPacket(apiHost, apiPort);
+  udpServer.write((String()+"{\"type\":\"interphone\",\"device\":\""+device+"\",\"token\":\""+apiToken+"\"}").c_str());
+  udpServer.endPacket();
+}
+
+void on_recv_event(String msg) {
+  Serial.println(msg);
+  // TODO auth
+  if (msg == "token:"+apiToken+"\tcommand:open") {
+    digitalWrite(openBtnPin, 1);
+    delay(200);
+    digitalWrite(openBtnPin, 0);
+  } else if (msg == "token:"+apiToken+"\tcommand:start") {
+    digitalWrite(startBtnPin, 1);
+    delay(200);
+    digitalWrite(startBtnPin, 0);
+  } else {
+    Serial.println("unknown msg.");
+  }
 }
 
 void loop(void){
   server.handleClient();
+  int packetSize = udpServer.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udpServer.read(packetBuffer, sizeof(packetBuffer));
+    if (len > 0) packetBuffer[len] = 0;
+    // Serial.println(packetSize);
+    on_recv_event(packetBuffer);
+  }
 }
 
