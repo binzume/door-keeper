@@ -4,6 +4,7 @@
 #include <ESP8266mDNS.h>
 #include <Servo.h> 
 #include <EEPROM.h>
+#include <WiFiUdp.h>
 #include <Ticker.h>
 
 const char* ssid = "public";
@@ -12,6 +13,8 @@ MDNSResponder mdns;
 ESP8266WebServer server(80);
 Servo lockServo;
 Ticker ticker;
+WiFiUDP udpServer;
+Ticker pingTicker;
 
 const uint8_t led = 4;
 
@@ -21,6 +24,9 @@ const uint8_t unlockServoPos = 180;
 const uint8_t lockServoPin = 13;
 const bool lockOnPowerOn = true;
 bool locked = true;
+
+const char* apiHost = "api.example.com";
+const int apiPort = 9000;
 
 void handleRoot() {
   digitalWrite(led, 1);
@@ -93,6 +99,15 @@ void setup(void){
   
   server.begin();
   Serial.println("HTTP server started");
+  udpServer.begin(9000);
+  Serial.println("UDP server started");
+  pingTicker.attach(300, ping);
+}
+
+void ping() {
+  udpServer.beginPacket(apiHost, apiPort);
+  udpServer.write("{\"device\":\"door01\"}");
+  udpServer.endPacket();
 }
 
 void servo_apply() {
@@ -106,7 +121,29 @@ void servo_off() {
   ticker.detach();
 }
 
+void on_recv_event(String msg) {
+  Serial.println(msg);
+  // TODO auth
+  if (msg == "{\"msg\":\"lock\"}") {
+    locked = true;
+    servo_apply();
+  } else if (msg == "{\"msg\":\"unlock\"}") {
+    locked = false;
+    servo_apply();
+  } else {
+    Serial.println("unknown msg.");
+  }
+}
+
 void loop(void){
   server.handleClient();
+  int packetSize = udpServer.parsePacket();
+  if (packetSize) {
+    char packetBuffer[255];
+    int len = udpServer.read(packetBuffer, sizeof(packetBuffer));
+    if (len > 0) packetBuffer[len] = 0;
+    // Serial.println(packetSize);
+    on_recv_event(packetBuffer);
+  }
 }
 
