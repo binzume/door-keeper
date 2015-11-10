@@ -29,6 +29,8 @@ const char* apiHost = "api.example.com";
 const int apiPort = 9000;
 const String apiToken = "*****";
 
+bool pingReady = false;
+
 void handleRoot() {
   digitalWrite(led, 1);
   server.send(200, "text/plain", "Door keeper v0.1");
@@ -101,16 +103,22 @@ void setup(void){
   
   server.begin();
   Serial.println("HTTP server started");
-  udpServer.begin(9000);
+  udpServer.begin(apiPort);
   Serial.println("UDP server started");
   ping();
-  pingTicker.attach(300, ping);
+  pingTicker.attach(600, ping);
 }
 
 void ping() {
+  pingReady = true;
+}
+
+void do_ping() {
+  Serial.println("ping");
   udpServer.beginPacket(apiHost, apiPort);
-  udpServer.write((String("{\"type\":\"door\",\"device\":\"door01\",\"token\":\""+apiToken+"\",\"locked\": ") + (locked?"true":"false") +"}").c_str());
+  udpServer.write((String() + "{\"type\":\"door\",\"device\":\"door01\",\"token\":\""+apiToken+"\",\"locked\": " + (locked?"true":"false") +"}").c_str());
   udpServer.endPacket();
+  udpServer.flush();
 }
 
 void servo_apply() {
@@ -141,11 +149,15 @@ void on_recv_event(String msg) {
 void loop(void){
   server.handleClient();
   int packetSize = udpServer.parsePacket();
+  if (pingReady) {
+    pingReady = false;
+    do_ping();
+  }
   if (packetSize) {
     char packetBuffer[255];
     int len = udpServer.read(packetBuffer, sizeof(packetBuffer));
     if (len > 0) packetBuffer[len] = 0;
-    // Serial.println(packetSize);
+    udpServer.flush();
     on_recv_event(packetBuffer);
   }
 }
