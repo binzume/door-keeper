@@ -6,14 +6,30 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"io/ioutil"
 )
 
 var devs = map[string]*net.UDPAddr{}
 var conn2 *net.UDPConn
-var apiToken = "********"
 
-func udpsrv() {
-	addr, err := net.ResolveUDPAddr("udp", "0.0.0.0:9000")
+type Config struct {
+	HttpPort int  `json:"http_port"`
+	UdpPort int    `json:"udp_port"`
+	UpdateToken string  `json:"update_token"`
+	ApiToken string    `json:"api_token"`
+}
+
+type Device struct {
+	Type string
+	Ident string
+	Updated	int64
+	Data map[string]string
+}
+
+var config = Config{}
+
+func udpsrv(port int) {
+	addr, err := net.ResolveUDPAddr("udp", "0.0.0.0:" + fmt.Sprint(port))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -42,7 +58,7 @@ func udpsrv() {
 
 		m := map[string]string{}
 		json.Unmarshal(buf[:rlen], &m)
-		if m["token"] == apiToken {
+		if m["token"] == config.UpdateToken {
 			devs[m["device"]] = remote
 			log.Printf("Update device=%v \n", m["device"])
 		}
@@ -61,7 +77,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 }
 
 func send(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("token") != apiToken {
+	if r.FormValue("token") != config.ApiToken {
 		fmt.Fprintf(w, "{}")
 		return
 	}
@@ -73,7 +89,7 @@ func send(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// FIXME
-	_, err := conn2.WriteToUDP([]byte("token:"+apiToken+"\tcommand:"+command), devs[dev])
+	_, err := conn2.WriteToUDP([]byte("token:"+config.UpdateToken+"\tcommand:"+command), devs[dev])
 	if err != nil {
 		log.Fatalf("%v\n", err)
 	}
@@ -83,10 +99,13 @@ func send(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	go udpsrv()
+	jsonData, _ := ioutil.ReadFile("config.json")
+	// config := Config{}
+	json.Unmarshal(jsonData, &config)
+	go udpsrv(config.UdpPort)
 	log.Print("Start http")
 	http.HandleFunc("/", index)
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/send", send)
-	http.ListenAndServe("0.0.0.0:9000", nil)
+	http.ListenAndServe("0.0.0.0:" + fmt.Sprint(config.HttpPort), nil)
 }
