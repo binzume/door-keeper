@@ -2,25 +2,27 @@
 # メモ
 
 ## front:
-1 通常LED K TP465
-2 GND
-3 非常 LED K + 電源LED K
-4 LED R
-5 LED L
-10 ボタンcommon TP456 28ms main:TP455
-13 vcc 5.0V
-14 開錠ボタン TP210
-15 Rボタン
-16 Lボタン
-17 非常LED A TP399
-18 電源LED A TP401
-22 TP464
-23 情報LED
-24 開錠LED TP462
+
+- 1 通常LED K TP465
+- 2 GND
+- 3 非常 LED K + 電源LED K
+- 4 LED R
+- 5 LED L
+- 10 ボタンcommon TP456 28ms main:TP455
+- 13 vcc 5.0V
+- 14 開錠ボタン TP210
+- 15 Rボタン
+- 16 Lボタン
+- 17 非常LED A TP399
+- 18 電源LED A TP401
+- 22 TP464
+- 23 情報LED
+- 24 開錠LED TP462
 
 ## main:
-通話ボタン TP209
-通話LED TP229
+
+- 通話ボタン TP209
+- 通話LED TP229
 
 ## 色々
 
