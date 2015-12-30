@@ -3,34 +3,35 @@
 #include <util/delay.h>
 
 #define ROOM 0x00
-#define USE_COMPARATOR 0 // using analog comparator
+#define USE_COMPARATOR 1 // using analog comparator
 
-#define TX_DDR DDRD
-#define TX_PORT PORTD
-#define TX_PIN 0x02
+#define TX_DDR DDRB
+#define TX_PORT PORTB
+#define TX_PIN 0x10
 
-#define OUT_PORT PORTD
-#define OUT_DDR DDRD
-#define OUT_PIN_A 0x80
-#define OUT_PIN_B 0x40
+#define OUT_PORT PORTB
+#define OUT_DDR DDRB
+#define OUT_PIN_A 0x01
+#define OUT_PIN_B 0x02
 #define OUT_PIN_MASK (OUT_PIN_A | OUT_PIN_B)
 
-#define TCNT TCNT1
-#define OCRA OCR1A
+#define TCNT TCNT0
+#define OCRA OCR0A
 
 #define T0 (F_CPU/51800)
 #define T1 (F_CPU/69900)
 #define TLIMIT (T0 * 5 / 4)
 #define TMIN (T1 * 2 / 3)
-#if TLIMIT > 65500 // 16bit TCNT
+#if TLIMIT > 250 // 8bit TCNT
 #  error "Timer counter OVF." TLIMIT
 #endif
 
 #if USE_COMPARATOR
-#  define CAPTURE_VECT ANALOG_COMP_vect
+#  define CAPTURE_VECT ANA_COMP_vect
 #else
 #  define CAPTURE_VECT INT0_vect
 #endif
+
 
 
 volatile uint8_t out = 0;
@@ -49,7 +50,7 @@ ISR(CAPTURE_VECT) {
     }
 }
 
-ISR(TIMER1_COMPA_vect) {
+ISR(TIM0_COMPA_vect) {
     if (out) {
         OUT_PORT ^= OUT_PIN_MASK;
         out_count++;
@@ -131,12 +132,13 @@ void send_message(uint8_t d[], uint8_t len) {
 
 
 int main(void) {
+    OSCCAL = 0x61;
     TX_DDR = TX_PIN; // TxD
-    PORTC = 0x30; // INPUT
+    PORTB = 0x0C; // INPUT
 
 #if USE_COMPARATOR
     // Comparator
-    DIDR1 |= (1 << AIN1D) | (1 << AIN0D);
+    DIDR0 |= (1 << AIN1D) | (1 << AIN0D);
     ACSR |= (1 << ACIE) | (1 << ACIS1); // falling edge.
 #else
     // INT0
@@ -147,17 +149,18 @@ int main(void) {
 
 
     // timer1
-    TIMSK1 = 1 << OCIE1A;
+    TIMSK0 = 1 << OCIE0A;
     OCRA = TLIMIT;
     TCNT = 0;
-    TCCR1B = (1 << CS10) | (1 << WGM12); // TOP=OCRxA
+    TCCR0A = (1 << WGM01); // TOP=OCRxA
+    TCCR0B = (1 << CS00);
 
     sei();
 
     for (;;) {
         _delay_ms(20);
         //  for debug...
-        if ((PINC & 0x20) == 0) {
+        if ((PINB & 0x04) == 0) {
             //uint8_t cmd[] = {0x40, ROOM, 0x68}; // ping
             //uint8_t cmd[] = {0xC0, ROOM, 0x1c}; // off
             uint8_t cmd[] = {0x40, ROOM, 0x05, 0xc0}; // call
@@ -165,7 +168,7 @@ int main(void) {
             _delay_ms(200);
             _delay_ms(200);
         }
-        if ((PINC & 0x10) == 0) {
+        if ((PINB & 0x08) == 0) {
             uint8_t cmd[] = {0xC0, ROOM, 0x45, 0x8F}; //  start
             send_message(cmd, 4);
             _delay_ms(180); // Send befor 1C(reject?).

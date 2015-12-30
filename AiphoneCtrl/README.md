@@ -15,3 +15,9 @@ Wi-Fiでインターホンをコントロールするやつ．回路図ないで
 ![受信回路](circuit/circuit.png)
 
 
+AVR内蔵のアナログコンパレータでも動くようにしました．
+
+コード中の USE_COMPARATOR を 1 にしてください． tiny13等の8ピンAVRでも動くので，ほぼそのままNJM2903を置き換えられます．
+
+![回路2](circuit/circuit_avr_only.png)
+
