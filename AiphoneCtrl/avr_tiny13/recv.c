@@ -2,12 +2,22 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-#define ROOM 0x00
+//#define ROOM 0x00
+#ifndef ROOM
+#  error "ROOM undeclared. (gcc option: -D ROOM=0xXX)"
+#endif
 #define USE_COMPARATOR 1 // using analog comparator
 
+// uart
 #define TX_DDR DDRB
 #define TX_PORT PORTB
 #define TX_PIN 0x10
+#define RX_PORT PORTB
+#define RX_PIN PINB
+#define RX_PIN_MSK 0x08
+#define RX_INT PCINT3
+#define RX_INT_REG PCMSK
+#define RX_INT_VECT PCINT0_vect
 
 #define OUT_PORT PORTB
 #define OUT_DDR DDRB
@@ -22,6 +32,7 @@
 #define T1 (F_CPU/69900)
 #define TLIMIT (T0 * 5 / 4)
 #define TMIN (T1 * 2 / 3)
+typedef uint16_t tcnt_t; // 8bit TCNT
 #if TLIMIT > 250 // 8bit TCNT
 #  error "Timer counter OVF." TLIMIT
 #endif
@@ -32,37 +43,89 @@
 #  define CAPTURE_VECT INT0_vect
 #endif
 
+#define MODE_IDLE 0
+#define MODE_SEND 1
+#define MODE_RECV 2
+#define MODE_RX 3
+#define MODE_TX 4
 
-
-volatile uint8_t out = 0;
-volatile uint8_t out_count = 0;
-uint8_t b;
+volatile uint8_t mode = MODE_IDLE;
+volatile tcnt_t last_tcnt = 0;
+volatile uint8_t compa_count = 0;
+volatile uint8_t bit_count = 0;
+volatile uint8_t buf;
 ISR(CAPTURE_VECT) {
-    uint16_t t = TCNT;
+    tcnt_t t = TCNT;
+    if (mode == MODE_RX || mode == MODE_TX) return;
     if (t < TMIN) return;
     TCNT = 0;
-    b = (b << 1) & 0x07;
-    if (t > (T0 + T1) / 2)  b |= 1;  // 350 =  17.5us = (15+20)/2us @20Mhz
-    if (b < 3 || b == 4) { // 0,1,2,4 or 3,5,6,7
+    mode = MODE_RECV;
+
+    buf = (buf << 1) & 0x07;
+    if (t > (T0 + T1) / 2)  buf |= 1;
+    if (buf < 3 || buf == 4) { // 0,1,2,4 or 3,5,6,7
         TX_PORT |= TX_PIN;
     } else {
         TX_PORT &= ~TX_PIN;
     }
+    last_tcnt = t;
+}
+
+ISR(RX_INT_VECT) {
+    if (RX_PIN & RX_PIN_MSK) return;
+    if (mode != MODE_IDLE) return;
+    bit_count = 0;
+    compa_count = 0 - (F_CPU / 1200 / 200) / 2;
+    RX_INT_REG &= ~(1 << RX_INT);
+    TCNT = 0;
+    OCRA = 200;
+    mode = MODE_RX;
 }
 
 ISR(TIM0_COMPA_vect) {
-    if (out) {
+    compa_count++;
+    if (mode == MODE_SEND) {
         OUT_PORT ^= OUT_PIN_MASK;
-        out_count++;
+    } else if (mode == MODE_RX) {
+        if (compa_count == (F_CPU / 1200 / 200)) {
+            compa_count = 0;
+            if (bit_count == 8) {
+                RX_INT_REG |= (1 << RX_INT);
+            } else if (bit_count < 8) {
+                buf >>= 1;
+                bit_count++;
+                if (RX_PIN & RX_PIN_MSK) {
+                    buf |= 0x80;
+                }
+            }
+        }
+    } else if (mode == MODE_TX) {
+        if (compa_count == (F_CPU / 1200 / 200)) {
+            compa_count = 0;
+            if (bit_count == 8) {
+                bit_count = 0;
+                TX_PORT |= TX_PIN;
+                mode = MODE_IDLE;
+            } else if (bit_count < 8) {
+                if (buf & 1) {
+                    TX_PORT |= TX_PIN;
+                } else {
+                    TX_PORT &= ~TX_PIN;
+                }
+                buf >>= 1;
+                bit_count++;
+            }
+        }
     } else {
         // timeout
-        b = 0;
+        mode = MODE_IDLE;
+        buf = 0;
         TX_PORT |= TX_PIN;
     }
 }
 
 void sendbit(uint8_t b) {
-    out_count = 0;
+    compa_count = 0;
     uint8_t n;
     if (b & 1) {
         OCRA = (T1 / 2);
@@ -76,10 +139,10 @@ void sendbit(uint8_t b) {
     if (TCNT >= OCRA) {
         TCNT = OCRA - 1;
     }
-    while(out_count < n);
+    while(compa_count < n);
 }
 
-void sendb(uint8_t d) {
+void sendbyte(uint8_t d) {
     sendbit(1);
     sendbit(0); // st
 
@@ -96,45 +159,64 @@ void sendb(uint8_t d) {
     sendbit(1);
 }
 
-void send_message(uint8_t d[], uint8_t len) {
-    OUT_PORT |= OUT_PIN_B;
-    OUT_PORT &= ~OUT_PIN_A;
-    OUT_DDR |= OUT_PIN_MASK;
-
+void send_message(const uint8_t d[], uint8_t len) {
 #if USE_COMPARATOR
     ACSR = 0;
 #else
     EIMSK = 0x00;
 #endif
+    GIMSK &= ~(1 << PCIE);
 
-    out = 1;
+    while(mode != MODE_IDLE);
+    OUT_PORT |= OUT_PIN_B;
+    OUT_PORT &= ~OUT_PIN_A;
+    OUT_DDR |= OUT_PIN_MASK;
+
+    mode = MODE_SEND;
     TCNT = 0;
     uint8_t sum = 0;
 
     sendbit(1);
     for (uint8_t i = 0; i<len; i++) {
-        sendb(d[i]);
+        sendbyte(d[i]);
         sum += d[i];
     }
-    sendb(0x100-sum);
+    sendbyte(0 - sum);
 
     OUT_PORT &= ~OUT_PIN_MASK;
     OUT_DDR &= ~OUT_PIN_MASK;
-    out = 0;
+
+    TCNT = 0;
     OCRA = TLIMIT;
+    last_tcnt = 0;
+    mode = MODE_IDLE;
 
 #if USE_COMPARATOR
     ACSR |= (1 << ACIE) | (1 << ACIS1);
 #else
     EIMSK = 0x01;
 #endif
+    GIMSK |= (1 << PCIE);
 }
 
+void tx(uint8_t data) {
+    while(mode != MODE_IDLE);
+    buf = data;
+    bit_count = 0;
+    TX_PORT &= ~TX_PIN;
+    TCNT = 0;
+    OCRA = 200;
+    compa_count = 0;
+    mode = MODE_TX;
+    while(mode != MODE_TX);
+}
 
+int main(void) __attribute__((OS_main));
 int main(void) {
     OSCCAL = 0x61;
+    RX_PORT = 0x04 | RX_PIN_MSK; // INPUT pull up.
     TX_DDR = TX_PIN; // TxD
-    PORTB = 0x0C; // INPUT
+    TX_PORT |= TX_PIN;
 
 #if USE_COMPARATOR
     // Comparator
@@ -147,6 +229,8 @@ int main(void) {
     EIMSK = 0x01; // INT0 enable.
 #endif
 
+    //RX_INT_REG |= (1 << RX_INT);
+    GIMSK |= (1 << PCIE);
 
     // timer1
     TIMSK0 = 1 << OCIE0A;
@@ -157,23 +241,31 @@ int main(void) {
 
     sei();
 
+    uint8_t o_count = 0;
     for (;;) {
-        _delay_ms(20);
+        _delay_ms(10);
+
+        if (bit_count == 8) {
+            bit_count = 0;
+            mode = MODE_IDLE;
+            if (buf == 'O') {
+                o_count++;
+            } else {
+                o_count = 0;
+            }
+        }
         //  for debug...
-        if ((PINB & 0x04) == 0) {
+        // if ((PINB & 0x04) == 0 || o_count == 3) {
+        if ((PINB & 0x08) == 0) {
+            o_count = 0;
             //uint8_t cmd[] = {0x40, ROOM, 0x68}; // ping
             //uint8_t cmd[] = {0xC0, ROOM, 0x1c}; // off
-            uint8_t cmd[] = {0x40, ROOM, 0x05, 0xc0}; // call
+            //uint8_t cmd[] = {0x40, ROOM, 0x05, 0xc0}; // call
+            uint8_t cmd[] = {0xC0, ROOM, 0x45, 0x8F}; // start
             send_message(cmd, 4);
-            _delay_ms(200);
-            _delay_ms(200);
-        }
-        if ((PINB & 0x08) == 0) {
-            uint8_t cmd[] = {0xC0, ROOM, 0x45, 0x8F}; //  start
+            _delay_ms(160); // Send before 1C(reject?).
+            cmd[3] = 0x8C;  // open
             send_message(cmd, 4);
-            _delay_ms(180); // Send befor 1C(reject?).
-            uint8_t cmd2[] = {0xC0, ROOM, 0x45, 0x8C}; //  open
-            send_message(cmd2, 4);
             _delay_ms(200);
             _delay_ms(200);
         }
