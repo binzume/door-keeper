@@ -59,6 +59,7 @@ ISR(CAPTURE_VECT) {
     if (mode == MODE_RX || mode == MODE_TX) return;
     if (t < TMIN) return;
     TCNT = 0;
+    OCRA = TLIMIT;
     mode = MODE_RECV;
 
     buf = (buf << 1) & 0x07;
@@ -263,7 +264,7 @@ int main(void) {
             //uint8_t cmd[] = {0x40, ROOM, 0x05, 0xc0}; // call
             uint8_t cmd[] = {0xC0, ROOM, 0x45, 0x8F}; // start
             send_message(cmd, 4);
-            _delay_ms(160); // Send before 1C(reject?).
+            _delay_ms(140); // Send before '1C' (reject?).
             cmd[3] = 0x8C;  // open
             send_message(cmd, 4);
             _delay_ms(200);
