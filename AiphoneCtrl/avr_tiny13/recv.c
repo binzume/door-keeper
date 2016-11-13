@@ -54,20 +54,27 @@ volatile tcnt_t last_tcnt = 0;
 volatile uint8_t compa_count = 0;
 volatile uint8_t bit_count = 0;
 volatile uint8_t buf;
+volatile uint8_t uart_recv_data = 0;
 ISR(CAPTURE_VECT) {
     tcnt_t t = TCNT;
     if (mode == MODE_RX || mode == MODE_TX) return;
     if (t < TMIN) return;
     TCNT = 0;
     OCRA = TLIMIT;
-    mode = MODE_RECV;
 
     buf = (buf << 1) & 0x07;
-    if (t > (T0 + T1) / 2)  buf |= 1;
-    if (buf < 3 || buf == 4) { // 0,1,2,4 or 3,5,6,7
-        TX_PORT |= TX_PIN;
+    if (t < (T0 + T1) / 2)  buf |= 1;
+    if (mode == MODE_RECV) {
+        if (buf < 3 || buf == 4) { // 0,1,2,4 or 3,5,6,7
+            TX_PORT &= ~TX_PIN;
+        } else {
+            TX_PORT |= TX_PIN;
+        }
     } else {
-        TX_PORT &= ~TX_PIN;
+        if (buf == 7) {
+            // signal detected.
+            mode = MODE_RECV;
+        }
     }
     last_tcnt = t;
 }
@@ -91,7 +98,10 @@ ISR(TIM0_COMPA_vect) {
         if (compa_count == (F_CPU / 1200 / 200)) {
             compa_count = 0;
             if (bit_count == 8) {
+                uart_recv_data = buf;
                 RX_INT_REG |= (1 << RX_INT);
+                bit_count = 0;
+                mode = MODE_IDLE;
             } else if (bit_count < 8) {
                 buf >>= 1;
                 bit_count++;
@@ -104,8 +114,8 @@ ISR(TIM0_COMPA_vect) {
         if (compa_count == (F_CPU / 1200 / 200)) {
             compa_count = 0;
             if (bit_count == 8) {
-                bit_count = 0;
                 TX_PORT |= TX_PIN;
+                bit_count = 0;
                 mode = MODE_IDLE;
             } else if (bit_count < 8) {
                 if (buf & 1) {
@@ -230,7 +240,7 @@ int main(void) {
     EIMSK = 0x01; // INT0 enable.
 #endif
 
-    //RX_INT_REG |= (1 << RX_INT);
+    RX_INT_REG |= (1 << RX_INT); // if use uart_rx
     GIMSK |= (1 << PCIE);
 
     // timer1
@@ -244,20 +254,18 @@ int main(void) {
 
     uint8_t o_count = 0;
     for (;;) {
-        _delay_ms(10);
-
-        if (bit_count == 8) {
-            bit_count = 0;
-            mode = MODE_IDLE;
-            if (buf == 'O') {
+        _delay_ms(1);
+        if (uart_recv_data != 0) {
+            if (uart_recv_data == 'O') {
                 o_count++;
             } else {
                 o_count = 0;
             }
+            uart_recv_data = 0;
         }
         //  for debug...
-        // if ((PINB & 0x04) == 0 || o_count == 3) {
-        if ((PINB & 0x08) == 0) {
+        if ((PINB & 0x04) == 0 || o_count == 3) {
+        //if ((PINB & 0x08) == 0) {
             o_count = 0;
             //uint8_t cmd[] = {0x40, ROOM, 0x68}; // ping
             //uint8_t cmd[] = {0xC0, ROOM, 0x1c}; // off
