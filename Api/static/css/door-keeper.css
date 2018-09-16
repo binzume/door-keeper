@@ -1,0 +1,26 @@
+
+form button {
+	margin: 2pt;
+	padding: 1pt;
+	width: 100%;
+	min-height: 40pt;
+	font-weight: bold;
+	border: 2px solid #5c5;
+	border-radius: 3px;
+	background-color: #cfc;
+	user-select: none;
+	color: #262;
+}
+form button:active {
+	background-color: #8f8;
+}
+button:hover {
+	box-shadow: 0px 2px 5px 1px #7af;
+}
+#status {
+	margin: 2pt;
+	padding: 1pt;
+	border: 1px solid #262;
+	border-radius: 3px;	
+	color: #262;
+}

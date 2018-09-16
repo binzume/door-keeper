@@ -1,0 +1,34 @@
+input[type="text"],input[type="password"] {
+	margin: 2pt;
+	padding: 0px 2pt;
+	border: 1px solid #ccc;
+	border-radius: 3px;
+	height: 1.8em;
+}
+
+input[type="range"] {
+	-moz-appearance: none;
+	-webkit-appearance: none;
+	appearance: none;
+	margin: 4pt 6pt;
+	padding: 0px;
+	background-color: rgba(255,255,255,0.6);
+	height: 2px;
+	border: none;
+	outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+	-moz-appearance: none;
+	-webkit-appearance: none;
+	appearance: none;
+	cursor: pointer;
+	position: relative;
+	border: none;
+	border-radius: 50%;
+	width: 12px;
+	height: 12px;
+	background-color: #ddd;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+	background-color: #fff;
+}
