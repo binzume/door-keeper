@@ -8,10 +8,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
 type Config struct {
+	Log         string `json:"log"`
 	HttpPort    int    `json:"http_port"`
 	UdpPort     int    `json:"udp_port"`
 	UpdateToken string `json:"update_token"`
@@ -59,7 +63,18 @@ func udpsrv(port int) {
 		// log.Printf("Receive [%v]: %v\n", remote, s)
 
 		m := map[string]string{}
-		json.Unmarshal(buf[:rlen], &m)
+		if buf[0] == '{' {
+			// json
+			json.Unmarshal(buf[:rlen], &m)
+		} else {
+			// ltsv
+			for _, kv := range strings.Split(string(buf[:rlen]), "\t") {
+				pair := strings.SplitN(kv, ":", 2)
+				if len(pair) == 2 {
+					m[pair[0]] = pair[1]
+				}
+			}
+		}
 		if m["token"] == config.UpdateToken {
 			d := Device{}
 			d.Ident = m["device"]
@@ -74,11 +89,6 @@ func udpsrv(port int) {
 		}
 		// len, err = conn.WriteToUDP([]byte(s), remote)
 	}
-}
-
-func index(w http.ResponseWriter, r *http.Request) {
-	json, _ := json.Marshal(map[string]string{"status": "ok", "message": "Hello!"})
-	fmt.Fprintf(w, string(json))
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
@@ -114,22 +124,39 @@ func static(w http.ResponseWriter, r *http.Request) {
 	fileServer.ServeHTTP(w, r)
 }
 
+func initHTTP() http.Handler {
+	api := http.NewServeMux()
+
+	api.HandleFunc("/status", status)
+	api.HandleFunc("/send", send)
+
+	staticDir := "static"
+	fileServer := http.FileServer(http.Dir(staticDir))
+	staticOrAPI := func(w http.ResponseWriter, r *http.Request) {
+		filePath := filepath.Join(staticDir, filepath.FromSlash(path.Clean("/"+r.URL.Path)))
+		if _, err := os.Stat(filePath); err == nil {
+			fileServer.ServeHTTP(w, r)
+		} else {
+			api.ServeHTTP(w, r)
+		}
+	}
+	return http.HandlerFunc(staticOrAPI)
+}
+
 func main() {
 	jsonData, _ := ioutil.ReadFile("config.json")
 	json.Unmarshal(jsonData, &config)
 
-	f, err := os.OpenFile("aiphone.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+	if config.Log != "" {
+		f, err := os.OpenFile(config.Log, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("error opening file: %v", err)
+		}
+		defer f.Close()
+		log.SetOutput(f)
 	}
-	defer f.Close()
-	log.SetOutput(f)
 
 	go udpsrv(config.UdpPort)
-	log.Print("Start http")
-	http.HandleFunc("/", index)
-	http.HandleFunc("/status", status)
-	http.HandleFunc("/send", send)
-	http.HandleFunc("/web/", static)
-	http.ListenAndServe("0.0.0.0:"+fmt.Sprint(config.HttpPort), nil)
+	log.Print("Start http server: ", config.HttpPort)
+	http.ListenAndServe(":"+fmt.Sprint(config.HttpPort), initHTTP())
 }
