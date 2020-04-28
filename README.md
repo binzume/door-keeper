@@ -1,13 +1,17 @@
-
 # DoorKeeper
 
-サーボで鍵を開けるやつ．
+ドアをコントロールするサーバ＋クライアント．そのまま動く感じのものじゃないです．
 
-# Aiphone Controller
+- [Door Keeper](DoorKeeper): サーボでドアのサムターンを回したりするやつ
+- [Aiphone Controller](AiphoneCtrl): インターホン(アイホン)を操作するやつ
+- [server](server): サーバです
 
-インターホン(アイホン)を操作するやつ．
+メモ：
 
-# TODO
+- ハードウェアはESP-WROOM-02ベースです(一部AVR)
+- UDP hole punchingでNAT越しに通信します
+- スマホのホーム画面に登録しとくと良いです(mobile-web-app-capable)
 
-回路図．中継サーバ．
+# License
 
+The MIT License
