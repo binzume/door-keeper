@@ -6,9 +6,8 @@
 #include <EEPROM.h>
 #include <WiFiUdp.h>
 #include <Ticker.h>
+#include "config.h"
 
-const char* ssid = "binzume.kstm.org";
-const char* password = "**********";
 MDNSResponder mdns;
 ESP8266WebServer server(80);
 Servo lockServo;
@@ -24,10 +23,6 @@ const uint8_t unlockServoPos = 180;
 const uint8_t lockServoPin = 13;
 const bool lockOnPowerOn = true;
 bool locked = true;
-
-const char* apiHost = "api.example.com";
-const int apiPort = 9000;
-const String apiToken = "*****";
 
 bool pingReady = false;
 
