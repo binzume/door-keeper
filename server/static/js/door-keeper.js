@@ -1,6 +1,6 @@
 "use strict";
 
-var apiUrl = "/";
+var apiUrl = "./";
 
 window.addEventListener('DOMContentLoaded', (ev) => {
 	document.forms['door'].addEventListener('submit', function (e) {
